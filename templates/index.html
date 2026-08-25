@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Industry Contacts Finder</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .search-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .search-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .search-form {
+            display: none;
+        }
+
+        .search-form.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
+        .btn-search {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            transition: transform 0.2s;
+        }
+
+        .btn-search:hover {
+            transform: translateY(-2px);
+        }
+
+        .results-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .results-count {
+            color: #667eea;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .contact-card {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 8px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .contact-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+        }
+
+        .contact-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .contact-company {
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .contact-detail {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .contact-detail strong {
+            min-width: 80px;
+            color: #333;
+        }
+
+        .badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #e8eaf6;
+            color: #667eea;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
+        .badge.verified {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .search-tabs {
+                flex-direction: column;
+            }
+
+            .tab-btn {
+                width: 100%;
+            }
+
+            .contact-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Music Industry Contacts Finder</h1>
+            <p>Search and manage music industry professionals</p>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalStats">{{ total_contacts }}</div>
+                    <div class="stat-label">Total Contacts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="verifiedStats">{{ verified_contacts }}</div>
+                    <div class="stat-label">Verified</div>
+                </div>
+            </div>
+        </header>
+
+        <div class="search-section">
+            <h2>🔍 Search Contacts</h2>
+
+            <div class="search-tabs">
+                <button class="tab-btn active" onclick="switchTab('simple')">Simple Search</button>
+                <button class="tab-btn" onclick="switchTab('advanced')">Advanced Search</button>
+            </div>
+
+            <!-- Simple Search -->
+            <form class="search-form active" id="simpleSearch">
+                <div class="form-group">
+                    <label>Search Type</label>
+                    <select id="searchType" onchange="updatePlaceholder()">
+                        <option value="name">Search by Name</option>
+                        <option value="company">Search by Company</option>
+                        <option value="location">Search by Location</option>
+                        <option value="country">Search by Country</option>
+                        <option value="role">Search by Role</option>
+                        <option value="genre">Search by Genre</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Query</label>
+                    <input type="text" id="simpleQuery" placeholder="Enter search term...">
+                </div>
+
+                <button type="button" class="btn-search" onclick="performSimpleSearch()">Search</button>
+            </form>
+
+            <!-- Advanced Search -->
+            <form class="search-form" id="advancedSearch">
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" id="advLocation" placeholder="e.g., New York">
+                </div>
+
+                <div class="form-group">
+                    <label>Country</label>
+                    <input type="text" id="advCountry" placeholder="e.g., USA">
+                </div>
+
+                <div class="form-group">
+                    <label>Minimum Years of Experience</label>
+                    <input type="number" id="advExperience" min="0" placeholder="e.g., 10">
+                </div>
+
+                <div class="form-group">
+                    <label>Roles</label>
+                    <div class="checkbox-group" id="rolesCheckbox"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Genres</label>
+                    <div class="checkbox-group" id="genresCheckbox"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="verifiedOnly">
+                        Verified Only
+                    </label>
+                </div>
+
+                <button type="button" class="btn-search" onclick="performAdvancedSearch()">Search</button>
+            </form>
+        </div>
+
+        <div class="results-section">
+            <div class="results-header">
+                <h2>📊 Results</h2>
+                <span class="results-count" id="resultCount"></span>
+            </div>
+            <div id="results" class="contact-grid">
+                <div class="no-results">👉 Use the search above to find contacts</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize checkboxes
+        function initializeCheckboxes() {
+            const roles = {{ roles | tojson }};
+            const genres = {{ genres | tojson }};
+
+            const rolesCheckbox = document.getElementById('rolesCheckbox');
+            roles.forEach(role => {
+                rolesCheckbox.innerHTML += `
+                    <div class="checkbox-item">
+                        <input type="checkbox" value="${role.name}" class="roleCheckbox">
+                        <label>${role.value}</label>
+                    </div>
+                `;
+            });
+
+            const genresCheckbox = document.getElementById('genresCheckbox');
+            genres.forEach(genre => {
+                genresCheckbox.innerHTML += `
+                    <div class="checkbox-item">
+                        <input type="checkbox" value="${genre.name}" class="genreCheckbox">
+                        <label>${genre.value}</label>
+                    </div>
+                `;
+            });
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.search-form').forEach(f => f.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+
+            if (tab === 'simple') {
+                document.getElementById('simpleSearch').classList.add('active');
+            } else {
+                document.getElementById('advancedSearch').classList.add('active');
+            }
+            event.target.classList.add('active');
+        }
+
+        function updatePlaceholder() {
+            const searchType = document.getElementById('searchType').value;
+            const placeholders = {
+                'name': 'e.g., Sarah Chen',
+                'company': 'e.g., Universal Music',
+                'location': 'e.g., New York',
+                'country': 'e.g., USA',
+                'role': 'Select a role',
+                'genre': 'Select a genre'
+            };
+            document.getElementById('simpleQuery').placeholder = placeholders[searchType];
+        }
+
+        async function performSimpleSearch() {
+            const type = document.getElementById('searchType').value;
+            const query = document.getElementById('simpleQuery').value;
+
+            if (!query) {
+                alert('Please enter a search term');
+                return;
+            }
+
+            showLoading();
+
+            try {
+                const response = await fetch('/api/contacts/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({type, query})
+                });
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                console.error('Search error:', error);
+            }
+        }
+
+        async function performAdvancedSearch() {
+            const roles = Array.from(document.querySelectorAll('.roleCheckbox:checked')).map(c => c.value);
+            const genres = Array.from(document.querySelectorAll('.genreCheckbox:checked')).map(c => c.value);
+            const location = document.getElementById('advLocation').value;
+            const country = document.getElementById('advCountry').value;
+            const minExp = parseInt(document.getElementById('advExperience').value) || null;
+            const verifiedOnly = document.getElementById('verifiedOnly').checked;
+
+            showLoading();
+
+            try {
+                const response = await fetch('/api/contacts/advanced', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        roles: roles.length > 0 ? roles : null,
+                        genres: genres.length > 0 ? genres : null,
+                        location: location || null,
+                        country: country || null,
+                        min_experience: minExp,
+                        verified_only: verifiedOnly
+                    })
+                });
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                console.error('Search error:', error);
+            }
+        }
+
+        function displayResults(contacts) {
+            const resultsDiv = document.getElementById('results');
+            const countDiv = document.getElementById('resultCount');
+
+            if (contacts.length === 0) {
+                resultsDiv.innerHTML = '<div class="no-results">❌ No contacts found</div>';
+                countDiv.textContent = '0 results';
+                return;
+            }
+
+            countDiv.textContent = `${contacts.length} result${contacts.length !== 1 ? 's' : ''}`;
+
+            resultsDiv.innerHTML = contacts.map(contact => `
+                <div class="contact-card">
+                    <div class="contact-name">${contact.name}</div>
+                    ${contact.company ? `<div class="contact-company">🏢 ${contact.company}</div>` : ''}
+                    ${contact.email ? `<div class="contact-detail"><strong>📧 Email:</strong> <a href="mailto:${contact.email}" style="color:#667eea">${contact.email}</a></div>` : ''}
+                    ${contact.phone ? `<div class="contact-detail"><strong>📱 Phone:</strong> ${contact.phone}</div>` : ''}
+                    ${contact.location ? `<div class="contact-detail"><strong>📍 Location:</strong> ${contact.location}</div>` : ''}
+                    ${contact.country ? `<div class="contact-detail"><strong>🌍 Country:</strong> ${contact.country}</div>` : ''}
+                    ${contact.years_experience ? `<div class="contact-detail"><strong>⏱️ Experience:</strong> ${contact.years_experience} years</div>` : ''}
+                    ${contact.success_rate ? `<div class="contact-detail"><strong>⭐ Success:</strong> ${(contact.success_rate * 100).toFixed(0)}%</div>` : ''}
+                    <div class="badges">
+                        ${contact.roles.map(role => `<span class="badge">${role}</span>`).join('')}
+                        ${contact.verified ? '<span class="badge verified">✅ Verified</span>' : ''}
+                        ${contact.genres.map(genre => `<span class="badge">${genre}</span>`).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showLoading() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">⏳ Searching...</div>';
+        }
+
+        // Load all contacts on page load
+        window.addEventListener('load', async () => {
+            initializeCheckboxes();
+            // Optional: load all contacts initially
+            // performSimpleSearch();
+        });
+    </script>
+</body>
+</html>
