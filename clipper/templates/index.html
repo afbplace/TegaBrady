@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peezy Clipper</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Peezy Report Clipper</h1>
+  <div id="modes"></div>
+</header>
+<main>
+  <section class="card">
+    <h2>1. Source video</h2>
+    <form id="newProject">
+      <label>Video URL <input name="source_url" type="url" placeholder="https://youtube.com/watch?v=..."></label>
+      <div class="or">or</div>
+      <label>Upload file <input name="file" type="file" accept="video/*"></label>
+      <label class="check"><input type="checkbox" name="rights_confirmed" value="true" required>
+        I own this video or am authorized to use it.</label>
+      <button>Generate candidate clips</button>
+      <span id="projectMsg" class="msg"></span>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>2. Candidate clips <small>(pick the ones to react to)</small></h2>
+    <div id="projects"></div>
+  </section>
+
+  <section>
+    <h2 class="pad">3–7. Draft, render, approve, publish</h2>
+    <div id="videos"></div>
+  </section>
+</main>
+
+<template id="videoTpl">
+  <article class="card video">
+    <div class="vhead"><h3></h3><span class="badge state"></span></div>
+    <div class="grid">
+      <div class="col">
+        <h4>Selected clip</h4>
+        <video class="clipPrev" controls preload="metadata"></video>
+        <h4>Your talking points <small>(one per line; drafts use only these words)</small></h4>
+        <textarea data-f="talking_points" rows="5"></textarea>
+        <label>Hashtags <input data-f="hashtags" placeholder="#PeezyReport #news"></label>
+        <button class="drafts secondary">Draft hooks / titles / captions</button>
+        <div class="draftOpts"></div>
+        <h4>Reaction video <small>(optional)</small></h4>
+        <input type="file" class="reaction" accept="video/*">
+        <video class="reactPrev" controls preload="metadata" hidden></video>
+        <label>Layout
+          <select data-f="layout">
+            <option value="stack">Stacked: clip on top, my reaction below</option>
+            <option value="sequence">Sequence: clip, then my reaction</option>
+            <option value="clip_only">Clip only</option>
+          </select></label>
+        <h4>Subtitles <small>(SRT, or plain lines auto-timed)</small></h4>
+        <textarea data-f="subtitles" rows="5"></textarea>
+      </div>
+      <div class="col">
+        <label>Hook <input data-f="hook"></label>
+        <label>Title <small class="count" data-for="title"></small><input data-f="title" maxlength="100"></label>
+        <label>Caption <small class="count" data-for="caption"></small><textarea data-f="caption" rows="6" maxlength="2200"></textarea></label>
+        <div class="row"><button class="save secondary">Save text</button><button class="render">Render vertical video</button></div>
+        <div class="renderErr err"></div>
+        <h4>Preview</h4>
+        <video class="outPrev" controls preload="metadata" hidden></video>
+        <div class="approval">
+          <h4>Approval</h4>
+          <label class="check"><input type="checkbox" class="okVideo"> I watched the final video.</label>
+          <label class="check"><input type="checkbox" class="okCaps"> I reviewed the title and caption. They say what I mean.</label>
+          <div class="row"><button class="approve">Approve</button><button class="unapprove secondary">Revoke approval</button></div>
+        </div>
+        <div class="publish">
+          <h4>Publish</h4>
+          <label class="check"><input type="checkbox" value="instagram" checked> Instagram Reels</label>
+          <label class="check"><input type="checkbox" value="tiktok" checked> TikTok</label>
+          <label class="check"><input type="checkbox" value="youtube" checked> YouTube Shorts</label>
+          <div class="row"><button class="pub">Publish approved video</button><button class="refresh secondary">Refresh status</button></div>
+          <table class="pubs"><thead><tr><th>Platform</th><th>Status</th><th>Details</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="msg vmsg"></div>
+      </div>
+    </div>
+  </article>
+</template>
+<script src="/static/app.js"></script>
+</body>
+</html>

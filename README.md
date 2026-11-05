@@ -313,3 +313,11 @@ MIT License - Feel free to use for personal or commercial projects
 ## Support
 
 For questions or issues, refer to the contact management documentation or the application's built-in help menu.
+
+---
+
+## Peezy Report Clipper (`clipper/`)
+
+A separate local dashboard for turning source videos into approved vertical clips for
+Instagram Reels, TikTok and YouTube Shorts (OpusClip → FFmpeg → Upload-Post). See
+[`clipper/SETUP.md`](clipper/SETUP.md) for setup, required accounts, and safety behaviour.
