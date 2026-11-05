@@ -29,9 +29,9 @@ With no keys set, both integrations run in **MOCK** mode and are labelled that w
   "reviewed the title/caption" ticked. Approval is tied to a fingerprint of the exact
   video file, title and caption. Any edit or re-render revokes it.
 - **Duplicate protection:** the database allows only one post per platform for each
-  approved fingerprint. A failed post can be retried. A post whose result is
-  *unknown* (network dropped after sending) cannot be retried until you check the
-  provider dashboard.
+  approved fingerprint. Only a **Failed** post can be retried, and it gets a new request
+  ID. Pending, Published and "NOT live: action needed" posts are never re-sent.
+  Upload-Post's `Idempotency-Key` adds a second layer of protection.
 - **"Published" means confirmed:** a platform shows Published only when the provider
   response says success **and** returns a post ID or URL. Otherwise it stays
   Pending (use "Refresh status") or Failed.
@@ -40,55 +40,65 @@ With no keys set, both integrations run in **MOCK** mode and are labelled that w
   are ever stored.
 
 ## Accounts and keys you need
+Prices and limits below come from the providers' official docs as of 2026-11-05.
 
-| # | Account | Why | Cost (unverified, see note) |
-|---|---------|-----|-----------------------------|
-| 1 | **OpusClip** on a plan with API access (Pro Beta, Max, or Business) | Candidate clips | Plan subscription. API use is billed at 1 credit per source minute, 10-credit minimum per project. The plan includes about 900 credits/month |
-| 2 | **Upload-Post** on a paid plan (Basic or higher; TikTok is not available on Free) | One API for Reels, TikTok and Shorts | About $16/mo billed annually or $24/mo monthly |
-| 3 | **Instagram Professional account** (Business or Creator) | Required for Reels publishing via API | Free |
-| 4 | **TikTok account** | Target account | Free |
-| 5 | **YouTube channel** (Google account) | Shorts target | Free |
+| # | Account | Why | Cost |
+|---|---------|-----|------|
+| 1 | **OpusClip** on **Pro (Beta), Max or Business** (API access is only on these plans) | Candidate clips | Plan price is on opus.pro/pricing. API use: 1 credit = 1 source minute, **10-credit minimum per API project**. Pro Beta and Max include **900 credits (15 h) per month**; past that the API returns 403 until the 1st (UTC). 30 requests/min, 4 projects at once |
+| 2 | **Upload-Post Basic** or higher (TikTok returns 403 on Free) | Reels, TikTok and Shorts in one API | **$24/mo**, or **$16/mo billed yearly ($192)**. Unlimited uploads, 5 profiles |
+| 3 | **Instagram Professional account** (Creator or Business) | Reels publishing | Free |
+| 4 | **TikTok account** | Target | Free. Hard cap of 15 posts/day |
+| 5 | **YouTube channel** | Shorts target | Free. Hard cap of 30 posts/day. No Google Cloud setup needed; Upload-Post uses its own quota |
 
 ### Steps
-1. **OpusClip:** sign up at opus.pro and choose a plan that includes API access
-   (or request access at opus.pro/contact-api). Copy the API key from the bottom-left
-   of the dashboard into `OPUSCLIP_API_KEY`. Add `OPUSCLIP_ORG_ID` if the API asks for one.
-2. **Upload-Post:** create an account at upload-post.com, pick a paid plan, and create an
-   API key in the dashboard → `UPLOAD_POST_API_KEY`.
-3. In Upload-Post, create a **profile** (for example `peezy`) → `UPLOAD_POST_USER`. From that
-   profile, connect Instagram, TikTok and YouTube. Each opens the platform's own OAuth
-   login. If Instagram is still a personal account, first switch it to Creator or
-   Business in the Instagram app.
-4. Restart `python app.py`. The header badges change from MOCK to LIVE.
-5. **First live test:** publish one throwaway video to a single platform. Watch the
-   status row and compare it with the post on the platform before going wider.
+1. **OpusClip:** subscribe to Pro (Beta) or Max at opus.pro. Copy the API key from the
+   bottom-left corner of clip.opus.pro/dashboard into `OPUSCLIP_API_KEY`. If you belong to
+   more than one OpusClip organization, also set `OPUSCLIP_ORG_ID`.
+2. **Upload-Post:** sign up at upload-post.com and choose Basic. Create an API key in the
+   dashboard and put it in `UPLOAD_POST_API_KEY`.
+3. In Upload-Post **Manage Users**, create a profile (for example `peezy`) and put that name in
+   `UPLOAD_POST_USER`. Connect Instagram, TikTok and YouTube to the profile. Each one opens
+   that platform's own OAuth login. If Instagram is a personal account, first switch it to
+   Creator or Business in the Instagram app.
+4. Restart `python app.py`. Click **Check connections**. It is read-only: it validates both keys
+   and lists which platforms are connected or need reconnecting. It posts nothing and costs no credits.
+5. **First live test:** set `YOUTUBE_PRIVACY=private` and publish one throwaway video to
+   YouTube only. Confirm the status row matches what you see on YouTube, then remove the
+   setting.
+
+## How live mode behaves
+- **OpusClip:** the app uploads your file (or passes your URL) and polls the project every
+  30 s until its stage is `COMPLETE`.
+  - **Uploaded sources:** each clip is cut from *your* original file at OpusClip's timestamps,
+    so there are no OpusClip overlays.
+  - **URL sources:** the app downloads OpusClip's rendered clip, which may already have
+    OpusClip captions on it (marked "OpusClip render"). Clear the subtitle box if they double
+    up, or set `OPUSCLIP_BRAND_TEMPLATE_ID` to a template without captions.
+  - **Subtitles:** pre-filled as timed SRT from OpusClip's word-level transcript. Edit them freely.
+  - **AI text:** OpusClip's AI clip titles and hashtags are only labels in the picker. They are
+    never put into your captions, and the AI "auto hook" overlay is switched off.
+- **Upload-Post:** one async upload per publish.
+  - **Duplicates:** the app creates its own `request_id` and `Idempotency-Key` and saves them
+    *before* sending. If the connection drops, nothing is re-sent; the status check finds out
+    what happened.
+  - **TikTok:** posts with `DIRECT_POST` and `disable_inbox_fallback=true`, so a daily-cap hit
+    fails visibly instead of silently landing in your TikTok drafts. If it lands in drafts
+    anyway, the row shows **NOT live: action needed**.
+  - **Status updates:** pending posts are re-checked about every 30 s. **Published** needs a
+    post link or post ID from the provider. TikTok can take minutes, sometimes hours under
+    moderation, to release the public link, and the row stays Pending until then.
 
 ## Platform specs the renderer targets
-The output is 1080×1920 (9:16), H.264 High at 30 fps with yuv420p, AAC 48 kHz, and `+faststart`.
-Renders are capped at **180 s**:
-- YouTube treats vertical or square uploads of 3 minutes or less as Shorts. There is no API flag for this.
-- TikTok's API default limit is 3 minutes.
-- Reels allow longer.
+Output is 1080×1920 (9:16), H.264 High at 30 fps with yuv420p, AAC 48 kHz, and `+faststart`.
+Renders must be **3–180 s**:
+- YouTube treats vertical uploads of 3 minutes or less as Shorts.
+- TikTok allows 3–600 s via the API.
+- Instagram Reels allow 3 s–15 min, up to 300 MB.
 
+Titles are capped at 100 characters (YouTube) and captions at 2,200 (Instagram).
 Subtitles sit about 420 px above the bottom edge, clear of the platforms' on-screen buttons.
 
-## ⚠️ Verify before going live
-The OpusClip and Upload-Post doc sites were **blocked from the build environment** on
-2026-11-05. The endpoints and field names below come from search-engine summaries of
-their official docs, so they are unverified. Before the first live use, check them against:
-- `opusclip.py`: `POST /api/upload-links`, `POST /api/clip-projects` (`videoUrl`, `curationPref`),
-  `GET /api/exportable-clips?q=findByProjectId&projectId=…`. The response fields for title,
-  start/end, score and download URL are mapped defensively. Confirm them at
-  help.opus.pro/api-reference.
-- `publisher.py`: `POST /api/upload` (multipart, `Authorization: Apikey …`, `platform[]`,
-  `privacy_level`, `privacyStatus`, `media_type=REELS`) and
-  `GET /api/uploadposts/status?request_id=…`. Confirm them at docs.upload-post.com/api/upload-video.
-
-The status logic never trusts an ambiguous response. If a field name is wrong, the post
-shows as Pending or Failed, never as falsely Published.
-
 ## Alternatives considered
-- **Ayrshare:** mature, with built-in duplicate rejection, but about $149/mo or more for video,
-  and it needs a public media URL (an extra upload step).
-- **Zernio (formerly Late):** cheapest, about $6/mo per account beyond 2 free, but it needs
-  a presigned upload step. You could swap it in by rewriting `publisher.py` only.
+- **Ayrshare:** mature, but about $149/mo or more for video and it needs a public media URL.
+- **Zernio (formerly Late):** cheaper per account, but needs a presigned upload step. Only
+  `publisher.py` would change.

@@ -1,5 +1,6 @@
 import subprocess
 import sys
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ def media(tmp_path_factory):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    for k in ("OPUSCLIP_API_KEY", "UPLOAD_POST_API_KEY", "UPLOAD_POST_USER"):
+    for k in ("OPUSCLIP_API_KEY", "UPLOAD_POST_API_KEY", "UPLOAD_POST_USER", "TIKTOK_PRIVACY_LEVEL"):
         monkeypatch.delenv(k, raising=False)
     import app as appmod
     monkeypatch.setattr(appmod, "_load_dotenv", lambda p: None)

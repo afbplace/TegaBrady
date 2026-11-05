@@ -37,3 +37,5 @@ video { width:100%; max-height:420px; background:#000; border-radius:6px; }
 table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
 td, th { border-bottom:1px solid var(--line); padding:6px 4px; text-align:left; vertical-align:top; word-break:break-word; }
 .projhead { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0 6px; }
+#checkOut { flex-basis:100%; margin:0; white-space:pre-wrap; font-size:13px; color:var(--muted); }
+#checkOut:empty { display:none; }

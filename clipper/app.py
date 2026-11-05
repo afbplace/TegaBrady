@@ -38,6 +38,10 @@ def _load_dotenv(path):
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
+def utcnow():
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
 def create_app(data_dir=None, run_async=True):
     here = Path(__file__).resolve().parent
     _load_dotenv(here / ".env")
@@ -148,11 +152,14 @@ def create_app(data_dir=None, run_async=True):
             for stage, opus_id, clips in runner(p["source_url"], p["source_file"], dirs["clips"]):
                 db.update("projects", pid, status=stage, opus_project_id=opus_id)
                 for c in clips or []:
+                    if not c.get("file_path"):
+                        continue
                     db.execute("INSERT INTO clips (project_id, opus_clip_id, title, start_s, end_s, score,"
-                               " transcript, file_path, remote_url, is_mock) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                               " transcript, file_path, remote_url, is_mock, source_kind, subtitles)"
+                               " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                                (pid, c["opus_clip_id"], c["title"], c["start_s"], c["end_s"], c["score"],
-                                c["transcript"], c.get("file_path"), c["remote_url"],
-                                1 if p["opus_mode"] == "mock" else 0))
+                                c["transcript"], c["file_path"], c["remote_url"],
+                                1 if p["opus_mode"] == "mock" else 0, c.get("source_kind"), c.get("subtitles") or ""))
         except Exception as e:  # surfaced in the UI
             db.update("projects", pid, status="failed", error=str(e)[:1000])
 
@@ -173,7 +180,7 @@ def create_app(data_dir=None, run_async=True):
         db.update("clips", cid, selected=1)
         v = db.one("SELECT id FROM videos WHERE clip_id=?", (cid,))
         vid = v["id"] if v else db.execute(
-            "INSERT INTO videos (clip_id, subtitles) VALUES (?,?)", (cid, c["transcript"] or ""))
+            "INSERT INTO videos (clip_id, subtitles) VALUES (?,?)", (cid, c["subtitles"] or ""))
         return jsonify({"video_id": vid})
 
     # ------------------------------------------------------------ videos
@@ -252,6 +259,10 @@ def create_app(data_dir=None, run_async=True):
             abort(400, "Confirm you watched the final video AND reviewed the title/caption.")
         if not (v["caption"] or "").strip() or not (v["title"] or "").strip():
             abort(400, "Title and caption are required before approval.")
+        if len(v["title"]) > drafts.YOUTUBE_TITLE_MAX:
+            abort(400, f"Title is over {drafts.YOUTUBE_TITLE_MAX} characters (YouTube limit).")
+        if len(v["caption"]) > drafts.CAPTION_MAX:
+            abort(400, f"Caption is over {drafts.CAPTION_MAX} characters (Instagram limit).")
         db.update("videos", vid, approved=1, approved_fingerprint=fingerprint(v),
                   approved_at=datetime.datetime.now().isoformat(timespec="seconds"))
         return jsonify(video_view(get_video(vid)))
@@ -299,7 +310,7 @@ def create_app(data_dir=None, run_async=True):
 
     def set_pub(fp, p, is_mock, **f):
         db.update("publications", pubrow(fp, p, is_mock)["id"], **f,
-                  updated_at=datetime.datetime.now().isoformat(timespec="seconds"))
+                  updated_at=utcnow().isoformat(timespec="seconds"))
 
     def do_publish(vid, platforms, fp, is_mock):
         v = get_video(vid)
@@ -308,42 +319,70 @@ def create_app(data_dir=None, run_async=True):
                 set_pub(fp, p, 1, status="mock_published",
                         error="MOCK: nothing was posted. Add Upload-Post credentials to publish for real.")
             return
+        req_id = publisher.new_request_id()
+        for p in platforms:   # record our request id BEFORE sending, so a lost response is traceable
+            set_pub(fp, p, 0, request_id=req_id)
         try:
-            req_id, results, raw = publisher.submit(v["output_file"], platforms, v["title"], v["caption"],
-                                                    external_id=f"peezy-{vid}-{fp[:12]}")
+            results, raw = publisher.submit(v["output_file"], platforms, v["title"], v["caption"],
+                                            request_id=req_id, external_id=f"peezy-video-{vid}")
         except (requests.Timeout, requests.ConnectionError) as e:
-            for p in platforms:   # might have gone through - do NOT allow blind retry
-                set_pub(fp, p, 0, status="unknown",
-                        error=f"Network error after sending; check Upload-Post dashboard before retrying: {e}"[:900])
+            for p in platforms:   # don't re-send: the status check will tell us what happened
+                set_pub(fp, p, 0, status="pending",
+                        error=f"Connection dropped ({type(e).__name__}); checking with Upload-Post by request id.")
             return
         except Exception as e:
             for p in platforms:
                 set_pub(fp, p, 0, status="failed", error=str(e)[:900])
             return
         for p in platforms:
-            st, post_id, url, error = publisher.interpret(p, results.get(p))
-            set_pub(fp, p, 0, status=st, request_id=req_id, provider_post_id=post_id, post_url=url,
-                    error=error, raw_response=dumps(raw)[:20000])
+            st, post_id, url, message = publisher.interpret(p, results.get(p))
+            set_pub(fp, p, 0, status=st, provider_post_id=post_id, post_url=url,
+                    error=message or ("Submitted; waiting for Upload-Post to report back." if st == "pending" else None),
+                    raw_response=dumps(raw)[:20000])
 
     @app.post("/api/videos/<int:vid>/refresh")
     def refresh(vid):
         get_video(vid)
         rows = db.all("SELECT * FROM publications WHERE video_id=? AND is_mock=0 AND status='pending'"
                       " AND request_id IS NOT NULL", (vid,))
+        now = utcnow()
         for req_id in {r["request_id"] for r in rows}:
+            group = [r for r in rows if r["request_id"] == req_id]
             try:
-                results, raw = publisher.status(req_id)
+                overall, results, raw = publisher.status(req_id)
             except Exception as e:
-                for r in rows:
-                    if r["request_id"] == req_id:
-                        db.update("publications", r["id"], error=f"status check failed: {e}"[:900])
+                for r in group:
+                    db.update("publications", r["id"], error=f"Status check failed: {e}"[:900])
                 continue
-            for r in rows:
-                if r["request_id"] == req_id:
-                    st, post_id, url, error = publisher.interpret(r["platform"], results.get(r["platform"]))
-                    db.update("publications", r["id"], status=st, provider_post_id=post_id or r["provider_post_id"],
-                              post_url=url or r["post_url"], error=error, raw_response=dumps(raw)[:20000])
+            for r in group:
+                age = (now - datetime.datetime.fromisoformat(r["updated_at"].replace(" ", "T"))).total_seconds() \
+                    if r["updated_at"] else 0
+                if overall == "not_found":
+                    if age > 600:   # Upload-Post never received it -> safe to retry
+                        db.update("publications", r["id"], status="failed",
+                                  error="Upload-Post has no record of this upload; nothing was posted. You can retry.")
+                    continue
+                res = results.get(r["platform"])
+                if res is None and overall == "failed":
+                    st, post_id, url, msg = "failed", None, None, (raw.get("message") or "Upload failed")
+                else:
+                    st, post_id, url, msg = publisher.interpret(r["platform"], res)
+                db.update("publications", r["id"], status=st, provider_post_id=post_id or r["provider_post_id"],
+                          post_url=url or r["post_url"], error=msg, raw_response=dumps(raw)[:20000])
         return jsonify(video_view(get_video(vid)))
+
+    @app.get("/api/check")
+    def check():
+        out = {}
+        for name, mod in (("opusclip", opusclip), ("publisher", publisher)):
+            if mod.mode() == "mock":
+                out[name] = {"mode": "mock", "detail": "No credentials set: MOCK mode."}
+                continue
+            try:
+                out[name] = {"mode": "live", "ok": True, **mod.check_connection()}
+            except Exception as e:
+                out[name] = {"mode": "live", "ok": False, "detail": str(e)[:500]}
+        return jsonify(out)
 
     return app
 

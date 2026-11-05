@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS clips (
     file_path TEXT,
     remote_url TEXT,
     selected INTEGER NOT NULL DEFAULT 0,
-    is_mock INTEGER NOT NULL DEFAULT 0
+    is_mock INTEGER NOT NULL DEFAULT 0,
+    source_kind TEXT,                   -- raw_cut | opus_render | mock
+    subtitles TEXT DEFAULT ''           -- clip-relative SRT from OpusClip word timings
 );
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +57,7 @@ CREATE TABLE IF NOT EXISTS publications (
     content_fingerprint TEXT NOT NULL,
     provider TEXT NOT NULL,
     is_mock INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL,                -- submitting | pending | published | failed | unknown | mock_published
+    status TEXT NOT NULL,                -- submitting | pending | published | failed | needs_action | mock_published
     request_id TEXT,
     provider_post_id TEXT,
     post_url TEXT,
@@ -76,6 +78,11 @@ class DB:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
+        for col in ("source_kind TEXT", "subtitles TEXT DEFAULT ''"):  # upgrade older DBs
+            try:
+                self.conn.execute(f"ALTER TABLE clips ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
         self.conn.commit()
 
     def execute(self, sql, params=()):

@@ -19,6 +19,17 @@ async function loadModes() {
     b("Publishing", MODES.publisher, "nothing is posted");
 }
 
+$("#checkBtn").onclick = async () => {
+  $("#checkOut").textContent = "Checking…";
+  try {
+    const r = await api("/api/check");
+    const line = (n, x) => x.mode === "mock" ? `${n}: MOCK (no credentials)` : x.ok
+      ? `${n}: OK${x.plan ? " · plan " + x.plan : ""}${x.platforms ? " · " + Object.entries(x.platforms).map(([k, v]) => `${PLAT[k]}: ${v}`).join(", ") : ""}`
+      : `${n}: FAILED · ${x.detail}`;
+    $("#checkOut").textContent = line("OpusClip", r.opusclip) + "\n" + line("Upload-Post", r.publisher);
+  } catch (e) { $("#checkOut").textContent = "Error: " + e.message; }
+};
+
 $("#newProject").addEventListener("submit", async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -42,7 +53,10 @@ async function loadProjects() {
     <div class="clips">${p.clips.map(c => `
       <div class="clip">
         ${c.url ? `<video src="${c.url}" controls preload="metadata"></video>` : "<p>(no file)</p>"}
-        <p><strong>${esc(c.title)}</strong> ${c.is_mock ? '<span class="badge mock">MOCK</span>' : ""}</p>
+        <p><strong>${esc(c.title)}</strong> ${c.is_mock ? '<span class="badge mock">MOCK</span>' : ""}
+          ${c.source_kind === "opus_render" ? '<span class="badge warn" title="Downloaded from OpusClip; may already have OpusClip captions burned in. Clear the subtitles box if they double up.">OpusClip render</span>' : ""}
+          ${c.source_kind === "raw_cut" ? '<span class="badge ok" title="Cut from your original file at OpusClip\'s timestamps; no overlays.">clean cut</span>' : ""}</p>
+        ${c.subtitles ? "<p><small>Timed subtitles ready from transcript</small></p>" : ""}
         <p>${c.start_s ?? "?"}s – ${c.end_s ?? "?"}s ${c.score != null ? "· score " + c.score : ""}</p>
         <button data-clip="${c.id}" ${c.selected ? "disabled" : ""}>${c.selected ? "Selected" : "Use this clip"}</button>
       </div>`).join("")}</div>`).join("") : "<p><small>No projects yet.</small></p>";
@@ -64,7 +78,7 @@ function stateBadge(v) {
 }
 const PUB_LABEL = {submitting: ["Submitting…", "warn"], pending: ["Pending provider confirmation", "warn"],
   published: ["Published (provider confirmed)", "ok"], failed: ["Failed", "bad"],
-  unknown: ["Unknown, check provider before retry", "bad"], mock_published: ["MOCK: not posted", "mock"]};
+  needs_action: ["NOT live: action needed", "bad"], mock_published: ["MOCK: not posted", "mock"]};
 const PLAT = {instagram: "Instagram Reels", tiktok: "TikTok", youtube: "YouTube Shorts"};
 
 function fillCard(el, v, full) {
@@ -93,7 +107,7 @@ function fillCard(el, v, full) {
     return `<tr><td>${PLAT[p.platform] || p.platform}</td><td><span class="badge ${c}">${esc(lbl)}</span></td>
       <td>${p.post_url ? `<a href="${esc(p.post_url)}" target="_blank" rel="noopener">${esc(p.post_url)}</a><br>` : ""}
       ${p.provider_post_id ? "id " + esc(p.provider_post_id) + "<br>" : ""}${esc(p.error || "")}
-      <small>${esc(p.provider)} · ${esc(p.updated_at)}</small></td></tr>`; }).join("")
+      <small>${esc(p.provider)} · ${esc(p.updated_at)} UTC</small></td></tr>`; }).join("")
     : `<tr><td colspan="3"><small>Not published anywhere yet.</small></td></tr>`;
   updateCounts(el);
 }
@@ -167,8 +181,15 @@ async function loadProjectsIfChanged() {
   const ps = await api("/api/projects"); const sg = projectsSig(ps);
   if (sg !== projSig) { projSig = sg; await loadProjects(); }
 }
+let tickN = 0;
 async function tick() {
-  try { await loadProjectsIfChanged(); await loadVideos(); }   // cards only redraw when their status changes
+  try {
+    await loadProjectsIfChanged();
+    const videos = await loadVideos();
+    if (++tickN % 12 === 0)   // ~30 s: ask Upload-Post about live posts still pending
+      for (const v of videos.filter(v => v.publications.some(p => p.status === "pending" && !p.is_mock)))
+        await post(`/api/videos/${v.id}/refresh`);
+  }   // cards only redraw when their status changes
   catch (e) { console.error(e); }
 }
 (async () => { await loadModes(); await loadProjects(); await loadVideos(); setInterval(tick, 2500); })();

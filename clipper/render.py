@@ -153,6 +153,8 @@ def build_command(clip, reaction, layout, ass_name, out_name, clip_volume=0.35):
         else:
             raise RenderError(f"unknown layout {layout!r}")
         vlabel, alabel = "v0", "a0"
+    if dur < 3:
+        raise RenderError("Result is under 3 seconds; Reels, TikTok and YouTube require at least 3 s.")
     if dur > MAX_SECONDS:
         raise RenderError(f"Result would be {dur:.0f}s; Shorts/Reels/TikTok target is "
                           f"{MAX_SECONDS}s max. Trim the clip or reaction.")

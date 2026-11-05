@@ -9,6 +9,8 @@
 <header>
   <h1>Peezy Report Clipper</h1>
   <div id="modes"></div>
+  <div><button id="checkBtn" class="secondary">Check connections</button></div>
+  <pre id="checkOut"></pre>
 </header>
 <main>
   <section class="card">
@@ -19,6 +21,7 @@
       <label>Upload file <input name="file" type="file" accept="video/*"></label>
       <label class="check"><input type="checkbox" name="rights_confirmed" value="true" required>
         I own this video or am authorized to use it.</label>
+      <p><small>Live OpusClip: each project costs at least 10 credits (1 credit = 1 source minute).</small></p>
       <button>Generate candidate clips</button>
       <span id="projectMsg" class="msg"></span>
     </form>

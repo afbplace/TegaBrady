@@ -75,6 +75,7 @@ def test_full_mock_flow_approval_and_duplicates(client, media):
 class FakeResp:
     def __init__(self, body, code=200):
         self.status_code, self._b, self.text, self.content = code, body, str(body), b"x"
+        self.headers = {}
 
     def json(self):
         return self._b
@@ -85,6 +86,12 @@ def go_live(monkeypatch):
     monkeypatch.setenv("UPLOAD_POST_USER", "peezy")
 
 
+def live_pubs(client, vid, path="get"):
+    v = client.post(f"/api/videos/{vid}/refresh").get_json() if path == "refresh" \
+        else client.get(f"/api/videos/{vid}").get_json()
+    return {p["platform"]: p for p in v["publications"] if not p["is_mock"]}
+
+
 def test_live_requires_confirmation_to_mark_published(client, media, monkeypatch):
     vid = ready_video(client, media)
     approve(client, vid)
@@ -92,47 +99,120 @@ def test_live_requires_confirmation_to_mark_published(client, media, monkeypatch
     sent = {}
 
     def fake_post(url, headers, data, files, timeout):
-        sent.update(headers=headers, data=data)
-        return FakeResp({"request_id": "req1", "results": {
-            "tiktok": {"success": True, "url": "https://tiktok.com/@p/video/1"},
-            "youtube": {"success": True},                     # no id/url -> not confirmed
-            "instagram": {"success": False, "error": "IG account not linked"}}})
+        sent.update(url=url, headers=headers, data=data)
+        # documented async response: only a request_id, no per-platform results yet
+        return FakeResp({"success": True, "message": "Upload initiated successfully in background.",
+                         "request_id": dict(data)["request_id"], "total_platforms": 3})
     monkeypatch.setattr(requests, "post", fake_post)
-    client.post(f"/api/videos/{vid}/publish", json={"platforms": ["instagram", "tiktok", "youtube"]})
+    r = client.post(f"/api/videos/{vid}/publish", json={"platforms": ["instagram", "tiktok", "youtube"]}).get_json()
+    assert sorted(r["submitted"]) == ["instagram", "tiktok", "youtube"]
+    d = dict(sent["data"])
+    assert sent["url"].endswith("/api/upload")
     assert sent["headers"]["Authorization"] == "Apikey test-key"
-    assert ("platform[]", "tiktok") in sent["data"]
-    pubs = {p["platform"]: p for p in client.get(f"/api/videos/{vid}").get_json()["publications"] if not p["is_mock"]}
-    assert pubs["tiktok"]["status"] == "published"
-    assert pubs["youtube"]["status"] == "pending"
-    assert pubs["instagram"]["status"] == "failed"
+    assert sent["headers"]["Idempotency-Key"] == d["request_id"]
+    assert d["user"] == "peezy" and d["title"] == "My first point." and d["async_upload"] == "true"
+    assert d["media_type"] == "REELS" and d["post_mode"] == "DIRECT_POST" and d["disable_inbox_fallback"] == "true"
+    assert "privacy_level" not in d                      # TikTok account default unless configured
+    assert [v for k, v in sent["data"] if k == "platform[]"] == ["instagram", "tiktok", "youtube"]
+    pubs = live_pubs(client, vid)
+    assert {p["status"] for p in pubs.values()} == {"pending"}
 
-    # status poll confirms youtube
-    monkeypatch.setattr(requests, "get", lambda url, headers, params, timeout: FakeResp(
-        {"results": {"youtube": {"success": True, "video_id": "yt123"}}}))
-    pubs = {p["platform"]: p for p in client.post(f"/api/videos/{vid}/refresh").get_json()["publications"]}
-    assert pubs["youtube"]["status"] == "published" and pubs["youtube"]["provider_post_id"] == "yt123"
+    # documented status shape: results is a LIST with a platform field
+    status_body = {"status": "in_progress", "results": [
+        {"platform": "instagram", "success": False, "status": "failed", "error": "Expired access token"},
+        {"platform": "tiktok", "success": True, "status": "completed", "post_url": None,
+         "platform_post_id": "v_pub_123", "warnings": ["post id released later"]},
+        {"platform": "youtube", "success": True, "status": "completed", "video_id": "yt123"}]}
+    seen = {}
 
-    # retry only the failed platform; published ones are skipped
+    def fake_get(url, headers, params, timeout):
+        seen.update(url=url, params=params)
+        return FakeResp(status_body)
+    monkeypatch.setattr(requests, "get", fake_get)
+    pubs = live_pubs(client, vid, "refresh")
+    assert seen["url"].endswith("/api/uploadposts/status") and seen["params"]["request_id"] == d["request_id"]
+    assert pubs["instagram"]["status"] == "failed" and "Expired" in pubs["instagram"]["error"]
+    assert pubs["tiktok"]["status"] == "pending"      # success but no public post yet -> NOT published
+    assert pubs["youtube"]["status"] == "published"
+    assert pubs["youtube"]["post_url"] == "https://www.youtube.com/shorts/yt123"
+
+    status_body["results"][1].update(post_url="https://www.tiktok.com/@peezy/video/42", post_id="42")
+    assert live_pubs(client, vid, "refresh")["tiktok"]["status"] == "published"
+
+    # retry only the failed platform; confirmed ones are skipped; retry gets a NEW request id
     r = client.post(f"/api/videos/{vid}/publish", json={"platforms": ["instagram", "tiktok"]}).get_json()
     assert r["submitted"] == ["instagram"] and "tiktok" in r["skipped"]
+    assert dict(sent["data"])["request_id"] != d["request_id"]
 
 
-def test_live_timeout_is_unknown_not_retryable(client, media, monkeypatch):
+def test_tiktok_inbox_fallback_is_not_published(client, media, monkeypatch):
     vid = ready_video(client, media)
     approve(client, vid)
     go_live(monkeypatch)
+    monkeypatch.setattr(requests, "post", lambda *a, **k: FakeResp({"success": True, "results": {
+        "tiktok": {"success": True, "fallback_to_inbox": True, "publish_id": "v_inbox_file~1"}}}))
+    client.post(f"/api/videos/{vid}/publish", json={"platforms": ["tiktok"]})
+    p = live_pubs(client, vid)["tiktok"]
+    assert p["status"] == "needs_action" and "NOT live" in p["error"]
+    assert client.post(f"/api/videos/{vid}/publish", json={"platforms": ["tiktok"]}).get_json()["submitted"] == []
+
+
+def test_live_timeout_is_tracked_not_resent(client, media, monkeypatch):
+    vid = ready_video(client, media)
+    approve(client, vid)
+    go_live(monkeypatch)
+    calls = []
 
     def boom(*a, **k):
+        calls.append(1)
         raise requests.Timeout("read timed out")
     monkeypatch.setattr(requests, "post", boom)
     client.post(f"/api/videos/{vid}/publish", json={"platforms": ["youtube"]})
-    p = [p for p in client.get(f"/api/videos/{vid}").get_json()["publications"] if not p["is_mock"]][0]
-    assert p["status"] == "unknown"
-    r = client.post(f"/api/videos/{vid}/publish", json={"platforms": ["youtube"]}).get_json()
-    assert r["submitted"] == []
+    p = live_pubs(client, vid)["youtube"]
+    assert p["status"] == "pending" and "request id" in p["error"]
+    assert client.post(f"/api/videos/{vid}/publish", json={"platforms": ["youtube"]}).get_json()["submitted"] == []
+    assert len(calls) == 1
+    # Upload-Post did receive it and it went live
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResp({"status": "completed", "results": [
+        {"platform": "youtube", "success": True, "status": "completed", "url": "https://youtu.be/x", "video_id": "x"}]}))
+    assert live_pubs(client, vid, "refresh")["youtube"]["status"] == "published"
+
+
+def test_http_error_marks_failed(client, media, monkeypatch):
+    vid = ready_video(client, media)
+    approve(client, vid)
+    go_live(monkeypatch)
+    monkeypatch.setattr(requests, "post", lambda *a, **k: FakeResp(
+        {"success": False, "message": "TikTok uploads are not available on the Free plan."}, 403))
+    client.post(f"/api/videos/{vid}/publish", json={"platforms": ["tiktok"]})
+    p = live_pubs(client, vid)["tiktok"]
+    assert p["status"] == "failed" and "Free plan" in p["error"]
 
 
 def test_interpret():
     assert publisher.interpret("x", None)[0] == "pending"
-    assert publisher.interpret("x", {"success": True})[0] == "pending"
-    assert publisher.interpret("x", {"success": True, "post_id": "1"})[0] == "published"
+    assert publisher.interpret("tiktok", {"success": True, "publish_id": "1"})[0] == "pending"
+    assert publisher.interpret("instagram", {"success": True, "url": "https://instagram.com/p/1"})[0] == "published"
+    assert publisher.interpret("instagram", {"success": True, "status": "processing"})[0] == "pending"
+    assert publisher.interpret("x", {"success": False, "status": "retryable"})[0] == "pending"
+    assert publisher.interpret("youtube", {"success": False, "skipped": True, "error": "no account"})[0] == "failed"
+
+
+def test_check_endpoint_mock(client):
+    r = client.get("/api/check").get_json()
+    assert r["opusclip"]["mode"] == "mock" and r["publisher"]["mode"] == "mock"
+
+
+def test_check_connection_live(monkeypatch):
+    go_live(monkeypatch)
+
+    def fake_get(url, headers, timeout):
+        if url.endswith("/me"):
+            return FakeResp({"success": True, "plan": "Basic"})
+        return FakeResp({"profiles": [{"username": "peezy", "social_accounts": {
+            "instagram": {"handle": "peezyreport"}, "tiktok": "", "youtube": {"reauth_required": True}}}]})
+    monkeypatch.setattr(requests, "get", fake_get)
+    r = publisher.check_connection()
+    assert r["plan"] == "Basic"
+    assert r["platforms"] == {"instagram": "connected (peezyreport)", "tiktok": "not connected",
+                              "youtube": "reconnect required"}
